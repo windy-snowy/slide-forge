@@ -146,6 +146,77 @@ class TestJudge(unittest.TestCase):
         self.assertEqual(judged["status"], "warn")
         self.assertIn("PADDLE_OCR_TOKEN", judged["warnings"][0])
 
+    def test_zero_hits_blames_detection_not_text(self):
+        """回归：一行都没匹配上时，提示必须说"可能是分段/检出错位"，不能断言文字写错。"""
+        thresholds = {**THRESHOLDS, "ocr_used": True}
+        page = {"index": 1, "core_text": ["第一行", "第二行", "第三行", "第四行", "第五行"]}
+        info = qa_mod.probe_page(page, make_image(os.path.join(self.tmp, "cov.png")), use_ocr=False)
+        info.update({"ocr_lines": 2, "mean_ratio": 0.26, "line_hit_ratio": 0.0})
+        judged = qa_mod.judge_page(info, thresholds, {})
+        self.assertEqual(judged["status"], "warn")
+        self.assertEqual(judged["ocr_coverage"], 0.4)
+        self.assertIn("没有一行匹配核心文字", judged["warnings"][0])
+        self.assertIn("请人工看图确认", judged["warnings"][0])
+
+    def test_partial_hits_blames_text(self):
+        thresholds = {**THRESHOLDS, "ocr_used": True}
+        page = {"index": 1, "core_text": ["第一行", "第二行", "第三行"]}
+        info = qa_mod.probe_page(page, make_image(os.path.join(self.tmp, "cov2.png")), use_ocr=False)
+        info.update({"ocr_lines": 3, "mean_ratio": 0.2, "line_hit_ratio": 0.5})
+        judged = qa_mod.judge_page(info, thresholds, {})
+        self.assertIn("可能有错字/乱码/漏字", judged["warnings"][0])
+
+    def test_all_lines_found_but_chars_low(self):
+        thresholds = {**THRESHOLDS, "ocr_used": True}
+        page = {"index": 1, "core_text": ["第一行", "第二行", "第三行"]}
+        info = qa_mod.probe_page(page, make_image(os.path.join(self.tmp, "cov3.png")), use_ocr=False)
+        info.update({"ocr_lines": 3, "mean_ratio": 0.7, "line_hit_ratio": 1.0})
+        judged = qa_mod.judge_page(info, thresholds, {})
+        self.assertIn("每行都检出了", judged["warnings"][0])
+
+    def test_banded_retry_merges_missed_lines(self):
+        """回归：整页 OCR 一行都没命中时，条带兜底应把漏掉的文字读回来。"""
+        original_lines, original_banded = qa_mod.ocr_lines, qa_mod.ocr_lines_banded
+        try:
+            qa_mod.ocr_lines = lambda *a, **k: ([{"text": "标题"}, {"text": "底部按钮"}], "paddleocr-vl", "")
+            qa_mod.ocr_lines_banded = lambda *a, **k: ([{"text": "第一行"}, {"text": "第二行"},
+                                                       {"text": "第三行"}], "paddleocr-vl")
+            page = {"index": 1, "core_text": ["第一行", "第二行", "第三行"]}
+            info = qa_mod.probe_page(page, make_image(os.path.join(self.tmp, "band.png")), use_ocr=True)
+        finally:
+            qa_mod.ocr_lines, qa_mod.ocr_lines_banded = original_lines, original_banded
+        self.assertEqual(info["ocr_retry"], "banded")
+        self.assertEqual(info["ocr_lines"], 5)
+        self.assertEqual(info["line_hit_ratio"], 1.0)
+        self.assertEqual(info["mean_ratio"], 1.0)
+
+    def test_band_retry_triggers_on_partial_hits(self):
+        """行命中率不达标（漏检 1 行）时也要兜底，而不是只在 0 命中时。"""
+        original_lines, original_banded = qa_mod.ocr_lines, qa_mod.ocr_lines_banded
+        try:
+            qa_mod.ocr_lines = lambda *a, **k: ([{"text": "樱花盛开的小路"},
+                                                {"text": "夏日祭典的黄昏"}], "paddleocr-vl", "")
+            qa_mod.ocr_lines_banded = lambda *a, **k: ([{"text": "纸飞机越过屋顶"}], "paddleocr-vl")
+            page = {"index": 1, "core_text": ["樱花盛开的小路", "夏日祭典的黄昏", "纸飞机越过屋顶"]}
+            info = qa_mod.probe_page(page, make_image(os.path.join(self.tmp, "band2.png")), use_ocr=True)
+        finally:
+            qa_mod.ocr_lines, qa_mod.ocr_lines_banded = original_lines, original_banded
+        self.assertEqual(info.get("ocr_retry"), "banded")
+        self.assertEqual(info["line_hit_ratio"], 1.0)
+
+    def test_band_retry_skipped_when_min_disabled(self):
+        original_lines, original_banded = qa_mod.ocr_lines, qa_mod.ocr_lines_banded
+        try:
+            qa_mod.ocr_lines = lambda *a, **k: ([{"text": "标题"}], "paddleocr-vl", "")
+            qa_mod.ocr_lines_banded = lambda *a, **k: ([{"text": "第一行"}], "paddleocr-vl")
+            page = {"index": 1, "core_text": ["第一行"]}
+            info = qa_mod.probe_page(page, make_image(os.path.join(self.tmp, "nb.png")),
+                                     use_ocr=True, band_retry=False)
+        finally:
+            qa_mod.ocr_lines, qa_mod.ocr_lines_banded = original_lines, original_banded
+        self.assertNotIn("ocr_retry", info)
+        self.assertEqual(info["ocr_lines"], 1)
+
     def test_low_text_ratio_is_warn(self):
         thresholds = {**THRESHOLDS, "ocr_used": True}
         info = qa_mod.probe_page({"index": 1, "core_text": ["x"]},

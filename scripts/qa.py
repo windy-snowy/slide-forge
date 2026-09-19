@@ -47,6 +47,7 @@ DEFAULT_THRESHOLDS = {
     "min_dhash_distance": 6,
     "min_text_ratio": 0.85,
     "min_line_hit_ratio": 0.9,
+    "min_ocr_coverage": 0.6,
 }
 
 
@@ -180,6 +181,42 @@ def ocr_lines(image_path: str, work_dir: str | None = None, timeout: int = 300,
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+def ocr_lines_banded(image_path: str, bands: int = 4, overlap: float = 0.12,
+                      timeout: int = 300) -> tuple:
+    """整页 OCR 分段失败时的兜底：按横向条带切开分别识别再合并。
+
+    实测：整页识别会漏掉卡片里的文字（VL 模型的分段把卡片当成了图），
+    但把卡片区域裁出来能 100% 读对；放大整页则无效。所以用条带切分。
+    """
+    try:
+        from PIL import Image
+    except Exception:  # noqa: BLE001
+        return [], None
+    try:
+        with Image.open(image_path) as opened:
+            image = opened.convert("RGB")
+        width, height = image.size
+        step = height / max(1, bands)
+        merged, seen, backend = [], set(), None
+        for index in range(bands):
+            top = max(0, int(index * step - height * overlap))
+            bottom = min(height, int((index + 1) * step + height * overlap))
+            crop_dir = tempfile.mkdtemp(prefix="slideforge-band-")
+            crop_path = os.path.join(crop_dir, "band.png")
+            image.crop((0, top, width, bottom)).save(crop_path)
+            lines, band_backend, _note = ocr_lines(crop_path, timeout=timeout)
+            backend = backend or band_backend
+            for line in lines:
+                text = (line.get("text") or "").strip()
+                if text and text not in seen:
+                    seen.add(text)
+                    merged.append({"text": text, "band": index})
+            shutil.rmtree(crop_dir, ignore_errors=True)
+        return merged, backend
+    except Exception:  # noqa: BLE001
+        return [], None
+
+
 # --------------------------------------------------------------------------- #
 # 文本保真度
 # --------------------------------------------------------------------------- #
@@ -219,10 +256,13 @@ def text_fidelity(expected: list, observed: list, line_hit: float = 0.6) -> dict
 # --------------------------------------------------------------------------- #
 # 逐页测量与判定
 # --------------------------------------------------------------------------- #
-def probe_page(page: dict, path: str, use_ocr: bool, timeout: int = 300) -> dict:
+def probe_page(page: dict, path: str, use_ocr: bool, timeout: int = 300,
+               band_retry: bool = True, retry_below_hits: float = 0.9) -> dict:
+    expected = [str(t).strip() for t in (page.get("core_text") or []) if str(t).strip()]
     info = {"index": page.get("index"), "title": page.get("title"), "path": path,
             "exists": os.path.isfile(path),
             "bytes": os.path.getsize(path) if os.path.isfile(path) else 0,
+            "expected_lines": len(expected),
             "ocr_backend": None, "ocr_lines": 0}
     if not info["exists"]:
         return info
@@ -238,8 +278,20 @@ def probe_page(page: dict, path: str, use_ocr: bool, timeout: int = 300) -> dict
         info["ocr_note"] = note
         observed = [line.get("text", "") for line in lines if line.get("text")]
         info["ocr_lines"] = len(observed)
+        expected_texts = [str(t) for t in (page.get("core_text") or []) if str(t).strip()]
         if observed:
-            info.update(text_fidelity([str(t) for t in (page.get("core_text") or [])], observed))
+            info.update(text_fidelity(expected_texts, observed))
+        # 行命中率不达标时，先怀疑整页分段失败，用条带重试一次
+        # （实测：整页会漏掉卡片里的文字，条带切分能读回来；只在即将报警时才付出这次额外 OCR 调用）
+        if band_retry and expected_texts and (info.get("line_hit_ratio") or 0) < retry_below_hits:
+            band_lines, band_backend = ocr_lines_banded(path, timeout=timeout)
+            extra = [l["text"] for l in band_lines if l.get("text") and l["text"] not in observed]
+            if extra:
+                merged = observed + extra
+                info["ocr_retry"] = "banded"
+                info["ocr_backend"] = band_backend or backend
+                info["ocr_lines"] = len(merged)
+                info.update(text_fidelity(expected_texts, merged))
     return info
 
 
@@ -272,16 +324,28 @@ def judge_page(info: dict, thresholds: dict, digests: dict) -> dict:
                     break
             digests[info["index"]] = digest
         if thresholds.get("ocr_used", True):
-            if not info.get("ocr_lines"):
+            expected_lines = info.get("expected_lines") or 0
+            observed = info.get("ocr_lines") or 0
+            hits = info.get("line_hit_ratio") or 0
+            mean = info.get("mean_ratio")
+            info["ocr_coverage"] = round(observed / expected_lines, 2) if expected_lines else 1.0
+            if not observed:
                 warnings.append("OCR 未返回可用文字，跳过文本保真度检测（仅几何检测）"
                                 + (f"：{info['ocr_note']}" if info.get("ocr_note") else ""))
-            else:
-                if (info.get("mean_ratio") or 0) < thresholds["min_text_ratio"]:
-                    warnings.append(f"文本匹配率偏低（{info['mean_ratio']} < "
-                                    f"{thresholds['min_text_ratio']}），可能有错字/乱码/漏字")
-                if (info.get("line_hit_ratio") or 0) < thresholds["min_line_hit_ratio"]:
-                    warnings.append(f"整行命中率偏低（{info['line_hit_ratio']} < "
-                                    f"{thresholds['min_line_hit_ratio']}）")
+            elif expected_lines and hits == 0:
+                # 一行都没匹配上：多半是整页分段失败（文字其实在），也可能是文字确实缺失 —— 必须说清楚
+                warnings.append(f"OCR 检出 {observed} 行但没有一行匹配核心文字"
+                                + (f"（已做过条带重试）" if info.get("ocr_retry") else "")
+                                + "：可能是分段/检出错位，也可能是文字确实缺失 —— 请人工看图确认"
+                                + (f"，匹配率 {mean}" if mean is not None else ""))
+            elif mean is not None and mean < thresholds["min_text_ratio"]:
+                if hits >= thresholds["min_line_hit_ratio"]:
+                    warnings.append(f"每行都检出了，但字符匹配率偏低（{mean} < "
+                                    f"{thresholds['min_text_ratio']}）—— 常见于 OCR 漏读个别字或标点差异，"
+                                    f"建议人工扫一眼即可")
+                else:
+                    warnings.append(f"文本匹配率偏低（{mean} < {thresholds['min_text_ratio']}），"
+                                    f"可能有错字/乱码/漏字")
     info["status"] = "fail" if issues else ("warn" if warnings else "pass")
     info["issues"] = issues
     info["warnings"] = warnings
