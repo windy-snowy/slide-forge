@@ -29,6 +29,38 @@ find . -path ./.git -prune -o -type f -size +2M -print
 
 ---
 
+## 第 0.5 步 · 确认能连上 GitHub，并换成你自己的提交身份
+
+```bash
+# 1) 连通性（HTTPS 200 且 ls-remote 有输出就说明通）
+curl -sS -o /dev/null -w "github http=%{http_code}\n" https://github.com
+git ls-remote https://github.com/octocat/Hello-World.git HEAD
+# 走代理时才需要：
+#   export HTTPS_PROXY=http://127.0.0.1:7890
+#   git config --global http.proxy http://127.0.0.1:7890
+```
+
+```bash
+# 2) 换成你自己的身份（否则每个 commit 都会署上别人的名字）
+git config user.name  "你的名字"
+git config user.email "你的邮箱"
+
+# 3) 把已有的历史作者一起改掉（git 2.25 实测可用，文件不变）
+git rebase --root --exec 'git commit --amend --no-edit --reset-author'
+git log --format='%h %an <%ae> %s' | head -5      # 确认作者已变
+git ls-files | wc -l                              # 确认文件数量没变
+```
+
+> 想干脆只留一条提交（新仓库更常见）：
+> ```bash
+> git checkout --orphan fresh
+> git add -A
+> git commit -m "feat: slide-forge v0.1.0 —— 一句话生成图片版 / 元素版 PPT"
+> git branch -D main && git branch -m main
+> ```
+
+---
+
 ## 第 1 步 · 初始化本地仓库
 
 ```bash
@@ -195,6 +227,41 @@ python3 ~/.dsh/skills/slide-forge/scripts/deck.py doctor
 
 ---
 
+## 第 8 步 · 用 `skills` CLI 安装（可选，附实测结论）
+
+`npx -y skills@latest add <source>` 支持四种 source：**GitHub 仓库（`owner/repo`）、npm 包名、
+HTTP(S) 上的 SKILL.md / 压缩包、以及本地路径**。它做的事是「把远程内容拉下来 → 找到 SKILL.md →
+按 agent 目录安装」，所以：
+
+- ✅ **本地路径现在就能装**（已实测，`--list` 能正确列出 `slide-forge`）：
+
+  ```bash
+  npx -y skills@latest add "$(pwd)" --list                 # 先看能发现哪些技能
+  npx -y skills@latest add "$(pwd)" --skill slide-forge -a codebuddy --global
+  ```
+
+- ⏳ **`owner/repo` 写法要等推上 GitHub 之后**才有意义（没推就没有可拉取的地址）。
+  > 实测：用 CLI 克隆一个**带几十 MB 展示素材**的仓库会撞上默认 300s 克隆超时
+  > （`Clone timed out after 300s`）。本仓库 60 个文件 / 2.1MB，克隆很快；
+  > 真遇到超时就 `SKILLS_CLONE_TIMEOUT_MS=600000`。
+- ⚠️ **这个 CLI 不认识 DSH**：它支持的 agent 列表里有 `codebuddy`、`codex`、`claude`、`agents`
+  等 50+，但**没有 `dsh`**，所以 `--global` 不会写进 `~/.dsh/skills`。要在 DSH 里用，选一条：
+
+  1. **本仓库自带脚本**（最省事）：`git clone <你的仓库> && cd slide-forge && ./install.sh`
+  2. 先装到它认识的目录，再软链给 DSH：
+     ```bash
+     npx -y skills@latest add <user>/slide-forge --skill slide-forge -a codebuddy --global
+     ln -s ~/.codebuddy/skills/slide-forge "${DSH_HOME:-$HOME/.dsh}/skills/slide-forge"
+     ```
+     （本机实测 `DSH_HOME=/root/autodl-tmp/DSH/dsh-home`，所以真实目录是
+     `/root/autodl-tmp/DSH/dsh-home/skills`；`./install.sh` 会自动用这个变量。）
+
+本仓库的布局是**符合该 CLI 发现规则**的：它扫描仓库里任意 `SKILL.md`（大小写不敏感，排除
+`node_modules/.git/dist/build/__pycache__`），根目录的 `SKILL.md` 也在优先列表里，只要求
+frontmatter 有 `name` + `description` —— slide-forge 两者都有，且 `name` 是合法 kebab-case。
+
+---
+
 ## 常见错误
 
 | 现象 | 原因与解决 |
@@ -203,6 +270,8 @@ python3 ~/.dsh/skills/slide-forge/scripts/deck.py doctor
 | `failed to push some refs (fetch first)` | 建仓库时勾了 README：`git pull --rebase origin main` 后再 push |
 | `Support for password authentication was removed` | 必须用 PAT 或 SSH，不能用账号密码 |
 | `Permission denied (publickey)` | SSH 公钥没加到 GitHub，或 `ssh -T git@github.com` 先测通 |
+| `Clone timed out after 300s`（`skills` CLI） | 仓库太大或网慢：`SKILLS_CLONE_TIMEOUT_MS=600000`，或先手动 `git clone` 再把**本地路径**传给 `skills add` |
+| `npx skills add` 找不到技能 | 确认仓库里有 `SKILL.md` 且 frontmatter 含 `name` + `description`；用 `--list` 先验证发现结果 |
 | 推送了密钥 | **立刻**去服务商后台吊销并重新生成；然后用 `git filter-repo` 或 BFG 清理历史 |
 | 文件太大被拒 | 把 `examples/` 里的图压到 1280px / <500KB，或改用 Git LFS |
 | CI 红 | 先把 `python3 -m unittest discover -s tests` 在本地跑绿 |
