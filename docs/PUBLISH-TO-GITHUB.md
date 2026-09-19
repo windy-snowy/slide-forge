@@ -262,6 +262,61 @@ frontmatter 有 `name` + `description` —— slide-forge 两者都有，且 `na
 
 ---
 
+## 第 4.5 步 · 在 VS Code Remote / AutoDL 容器里推送（常见坑）
+
+在 **VS Code Remote-SSH / AutoDL 容器**里推送时，可能遇到这种报错，而且**根本不弹密码提示**：
+
+```
+Missing or invalid credentials.
+Error: connect ECONNREFUSED /tmp/vscode-git-xxxxxxxx.sock
+remote: No anonymous write access.
+fatal: Authentication failed for 'https://github.com/<user>/<repo>.git/'
+```
+
+原因：VS Code 往终端注入了 `GIT_ASKPASS` / `VSCODE_GIT_IPC_HANDLE`，让 git 走它的凭据助手；
+一旦那个 socket 失效，git 既拿不到凭据、也不会回退到终端提示。**这不是 token 或仓库的问题。**
+
+**修法 A：清掉 askpass，让 git 在终端里问（最快，用 PAT）**
+
+```bash
+unset GIT_ASKPASS SSH_ASKPASS VSCODE_GIT_IPC_HANDLE
+export GIT_TERMINAL_PROMPT=1
+git -c credential.helper= push -u origin main
+# Username: <你的用户名>
+# Password: 粘贴 PAT（输入时不显示）
+```
+
+**修法 B：改用 SSH（推荐，之后永不再输密钥）**
+
+```bash
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C "<你的用户名>@users.noreply.github.com"
+cat ~/.ssh/id_ed25519.pub          # 整行复制
+# GitHub → Settings → SSH and GPG keys → New SSH key → 粘贴 → Add
+ssh -T git@github.com              # 期望 "Hi <用户名>!"
+git remote set-url origin git@github.com:<你的用户名>/<repo>.git
+git push -u origin main
+```
+
+> `-N ""` 表示不设口令（省事）；想更安全就去掉它，并用 agent 记住口令：
+> `eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519`
+> 容器重置会丢 `~/.ssh`，长期使用建议把它放到数据盘再软链。
+
+**修法 C（最后手段）：URL 里带 token**
+
+```bash
+git push https://<用户名>:<TOKEN>@github.com/<用户名>/<repo>.git main
+```
+token 会进 `~/.bash_history`（开头加空格可被 `HISTCONTROL=ignorespace` 忽略），事后请清理，
+并且**不要**把带 token 的地址写进 `remote.origin.url`。
+
+**推送前顺手清掉被 Ctrl+Z 挂起的任务：**
+
+```bash
+jobs          # 看到 [1]+ Stopped git push ... 就执行 kill %1
+```
+
+---
+
 ## 常见错误
 
 | 现象 | 原因与解决 |
@@ -270,6 +325,7 @@ frontmatter 有 `name` + `description` —— slide-forge 两者都有，且 `na
 | `failed to push some refs (fetch first)` | 建仓库时勾了 README：`git pull --rebase origin main` 后再 push |
 | `Support for password authentication was removed` | 必须用 PAT 或 SSH，不能用账号密码 |
 | `Permission denied (publickey)` | SSH 公钥没加到 GitHub，或 `ssh -T git@github.com` 先测通 |
+| `Missing or invalid credentials` + `ECONNREFUSED /tmp/vscode-git-*.sock` | VS Code 的 askpass 助手坏了：见「第 4.5 步」修法 A / B |
 | `Clone timed out after 300s`（`skills` CLI） | 仓库太大或网慢：`SKILLS_CLONE_TIMEOUT_MS=600000`，或先手动 `git clone` 再把**本地路径**传给 `skills add` |
 | `npx skills add` 找不到技能 | 确认仓库里有 `SKILL.md` 且 frontmatter 含 `name` + `description`；用 `--list` 先验证发现结果 |
 | 推送了密钥 | **立刻**去服务商后台吊销并重新生成；然后用 `git filter-repo` 或 BFG 清理历史 |
