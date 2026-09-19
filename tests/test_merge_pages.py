@@ -34,6 +34,9 @@ def fake_part(root, part, page_dir_name="page_001", text="标题"):
         fh.write(b"fake")
     with open(os.path.join(page_dir, "source.png"), "wb") as fh:
         fh.write(b"fake")
+    # 真实单页 run 在 record/finalize 后一定有 validation.json
+    with open(os.path.join(page_dir, "validation.json"), "w", encoding="utf-8") as fh:
+        json.dump({"passed": True, "pptx": os.path.join(page_dir, "page.pptx")}, fh)
     return page_dir
 
 
@@ -125,6 +128,53 @@ class TestBuildMerged(unittest.TestCase):
         with open(os.path.join(self.merged_dir, "deck_manifest.json"), encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["page_count"], 1)
         self.assertFalse(os.path.exists(os.path.join(self.merged_dir, "pages", "page_002")))
+
+    def _validation_path(self, part):
+        return os.path.join(self.parts_root, part, "pages", "page_001", "validation.json")
+
+    def _write_validation(self, part, passed=True):
+        with open(self._validation_path(part), "w", encoding="utf-8") as fh:
+            json.dump({"passed": passed}, fh)
+
+    def _drop_validation(self, part):
+        os.remove(self._validation_path(part))
+
+    def test_deck_pages_carry_validation_path(self):
+        """回归：上游 validate_pptx.py 按 pages[].validation 找每页报告，缺字段会被解析成目录。"""
+        result = mp.build_merged(mp.list_parts(self.parts_root), self.spec, self.merged_dir,
+                                 self.pptx)
+        with open(result["deck_manifest"], encoding="utf-8") as fh:
+            deck = json.load(fh)
+        for index, page in enumerate(deck["pages"], 1):
+            self.assertEqual(page["validation"], f"pages/page_{index:03d}/validation.json")
+            self.assertTrue(os.path.isfile(
+                os.path.join(deck["job_dir"], page["validation"])))
+
+    def test_pre_check_rejects_unvalidated_part(self):
+        self._drop_validation("p01")
+        self._drop_validation("p02")
+        parts = mp.list_parts(self.parts_root)
+        problems = mp.page_validation_status(parts)
+        self.assertEqual(len(problems), 2)
+        self.assertTrue(all("缺少 validation.json" in item for item in problems))
+
+    def test_pre_check_rejects_failed_part(self):
+        self._write_validation("p02", passed=False)
+        problems = mp.page_validation_status(mp.list_parts(self.parts_root))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("passed 不是 true", problems[0])
+
+    def test_pre_check_accepts_all_validated(self):
+        self.assertEqual(mp.page_validation_status(mp.list_parts(self.parts_root)), [])
+
+    def test_build_and_validate_reports_unvalidated_parts(self):
+        self._drop_validation("p01")
+        self._drop_validation("p02")
+        result = mp.build_and_validate(mp.list_parts(self.parts_root), self.spec,
+                                       self.merged_dir, self.pptx)
+        self.assertFalse(result["ok"])
+        self.assertIn("单页 run 未全部通过校验", result["reason"])
+        self.assertIn("page.pptx", result["degraded_parts"][0])
 
     def test_build_and_validate_degrades_when_runtime_missing(self):
         original = mp._find_runtime

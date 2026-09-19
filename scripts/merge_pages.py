@@ -201,6 +201,8 @@ def build_merged(parts: list, spec: dict, merged_dir: str, pptx_out: str,
             "page_id": f"page_{index:03d}",
             "page_dir": f"pages/page_{index:03d}",
             "manifest": f"pages/page_{index:03d}/manifest.json",
+            # 上游 validate_pptx.py 会按这个字段找每页的 validation.json（缺了会被解析成目录 → Is a directory）
+            "validation": f"pages/page_{index:03d}/validation.json",
             "source_image": f"pages/page_{index:03d}/source.png",
             "part": part["part"],
         })
@@ -239,8 +241,32 @@ def build_merged(parts: list, spec: dict, merged_dir: str, pptx_out: str,
             "notes": len(notes), "warnings": warnings}
 
 
+def page_validation_status(parts: list) -> list:
+    """每个单页 run 必须先自己 finalize 通过；提前检查能给出比上游校验更清楚的报错。"""
+    problems = []
+    for part in parts:
+        path = os.path.join(part["page_dir"], "validation.json")
+        if not os.path.isfile(path):
+            problems.append(f"{part['part']}：缺少 validation.json（该单页 run 还没 record/finalize）")
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                report = json.load(fh)
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"{part['part']}：validation.json 解析失败（{exc}）")
+            continue
+        if report.get("passed") is not True:
+            problems.append(f"{part['part']}：validation.json 的 passed 不是 true")
+    return problems
+
+
 def build_and_validate(parts: list, spec: dict, merged_dir: str, pptx_out: str,
                        source: str = "", dry_run: bool = False) -> dict:
+    problems = page_validation_status(parts)
+    if problems:
+        return {"ok": False, "pages": len(parts), "notes": 0,
+                "reason": "单页 run 未全部通过校验：" + "；".join(problems),
+                "degraded_parts": [os.path.join(p["page_dir"], "page.pptx") for p in parts]}
     result = build_merged(parts, spec, merged_dir, pptx_out, source)
     runtime, root, tried = guard()
     result["runtime_source"] = root
