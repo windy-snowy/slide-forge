@@ -4,7 +4,7 @@
 
 > One sentence in → two decks out: an **Image deck** (full-page renders, best looking) and an **Element deck** (object-level editable, best to modify).
 
-[![CI](https://github.com/<your-name>/slide-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-name>/slide-forge/actions/workflows/ci.yml)
+[![CI](https://github.com/windy-snowy/slide-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/windy-snowy/slide-forge/actions/workflows/ci.yml)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 
@@ -43,7 +43,7 @@ slide-forge orchestrates it and hands you a single file.
 ## Install
 
 ```bash
-git clone https://github.com/<your-name>/slide-forge.git ~/slide-forge
+git clone https://github.com/windy-snowy/slide-forge.git ~/slide-forge
 cd ~/slide-forge && ./install.sh          # symlink into ~/.dsh/skills/slide-forge
 ./install.sh --target ~/.claude/skills    # or another agent
 ./install.sh --copy                       # when symlinks are unavailable

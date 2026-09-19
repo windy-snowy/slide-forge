@@ -4,7 +4,7 @@
 
 > 一句话描述 → 两份 PPT：**图片版**（整页图，最好看）+ **元素版**（对象级可编辑，最好改）
 
-[![CI](https://github.com/<your-name>/slide-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-name>/slide-forge/actions/workflows/ci.yml)
+[![CI](https://github.com/windy-snowy/slide-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/windy-snowy/slide-forge/actions/workflows/ci.yml)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 ![DSH Skill](https://img.shields.io/badge/DSH-skill-6E56CF)
@@ -52,7 +52,7 @@ slide-forge 会：
 ### 作为 DSH 技能
 
 ```bash
-git clone https://github.com/<your-name>/slide-forge.git ~/slide-forge
+git clone https://github.com/windy-snowy/slide-forge.git ~/slide-forge
 cd ~/slide-forge && ./install.sh            # 软链到 ~/.dsh/skills/slide-forge
 # 其他 agent：
 #   ./install.sh --target ~/.claude/skills
