@@ -81,17 +81,58 @@ merge_pages.py --parts <parts> --spec <spec> --out 单页元素版.pptx
 > 这个验证过程发现并修复了一个真实 bug：合并清单最初漏了 `pages[].validation` 字段，
 > 上游 `validate_pptx.py` 会把它解析成目录并报 `Is a directory`。已修复并加了回归测试。
 
-### 3.3 子代理页面重建：**本轮未跑完**
+### 3.3 子代理页面重建：3/3 完成
 
-3 个 page worker 已按策略并行派出（K=3，无栅栏），并确认它们在真实执行
-（例如 `page_003` 已产出 `assets/clean_base.png`，`page_001` 已写出 clean-base 与 asset-sheet 提示词）。
-但页面重建本身是上游 `image-to-editable-ppt` 的核心工作量（逐页对象级判定 + manifest 坐标），
-单页耗时远超图片版。**本轮的 3 页元素版没有跑完**，因此：
+3 个 page worker 按策略并行派出（K=3，无栅栏流水线），**3 页全部 `passed: true` 并 record 成功**：
 
-- 不要把它当成"元素版全流程已验证"；图片版与合并路径是已验证的，页面重建是**上游技能的既有能力**，
-  本轮只验证了编排与交接契约。
-- 想自己跑完：保留 `editable/run/` 目录，用 `editable_run.py next --run <run>` 继续，
-  或对已完成页 `record` 后 `finalize`。
+| 页 | 图像任务 | 可编辑文本框 | 结果 |
+| --- | --- | --- | --- |
+| `page_001` 封面 | 2（clean base + 玻璃环 asset sheet） | 5 | ✅ |
+| `page_002` 自注意力 | 3（clean base + 2 张色键资产表：4 个词元胶囊 / 发光注意力弧线） | 16 | ✅ |
+| `page_003` 三句话总结 | 2（clean base + 1 张色键资产表：3 个卡内图标） | 5 | ✅ |
+
+`finalize` 结果：
+
+```json
+{"slides": 3, "expected_pages": 3, "notes_found": 3, "notes_expected": 3,
+ "failed_page_validations": [], "page_contract_violations": [], "missing_parts": [],
+ "passed": true}
+```
+
+元素版可编辑性（程序化核对 `PPTX`）：3 页、13.333″×7.5″、**62 个形状 / 26 个可独立选中的文本框 / 12 张图片**、
+逐页讲者备注 34/52/18 字 —— 不是"整页图片 + 假文字"。
+
+子代理实测节奏：
+
+- 派发到全部 record 完成约 **1 小时 18 分钟**（3 页并行；单页对象级判定 + manifest 坐标编写是主要成本）
+- 期间用 `send_message` 给两个长时间无输出的 worker 各发了一次**收敛指令**（给出"参考 page_003 的 2 次图像任务路径"），
+  两个 worker 随后都在 4 分钟内产出第一批资产 —— 这条"定向催办"经验已写进 `references/subagent-strategy.md`
+- 如实记录的降级（不影响 `passed`）：运行时不支持渐变/Alpha 填充，卡片与标题渐变用纯色近似；
+  部分光晕是位图；字体用系统替代
+
+### 3.4 合并路径（默认无子代理模式）用同 3 页真实产物验证
+
+把上面 3 个真实重建后的页目录接到单页 run 的槽位上跑 `merge_pages.py`：
+
+```json
+{"pages": 3, "notes": 3, "passed": true, "slides": 3,
+ "failed_page_validations": [], "page_contract_violations": [], "missing_parts": []}
+```
+
+即**两条路径都能产出通过上游校验的 3 页元素版**：
+
+| 路径 | 产物 |
+| --- | --- |
+| `--subagents`（多页 run → finalize） | `out/Transformer 三页小样-元素版.pptx` |
+| 默认（单页 run → merge） | `out/Transformer 三页小样-元素版（合并路径）.pptx` |
+
+### 3.5 一处环境坑（已记录）
+
+`page_002` 的 worker 报告：CodeBuddy 的 safe-delete 批量守卫在
+`/tmp/codebuddy-safe-delete-bulk/<hash>/state.json` 里有一个卡在 499/500 的计数器，
+导致**任何图片读取**都失败并返回 `[safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED]`，
+阻断了 `read_image` 视觉核对。它只复位了那一条计数并保留备份。
+如果你在别的会话里遇到"图片打不开"，先查这个文件。
 
 ## 四、没有实测的部分（诚实清单）
 

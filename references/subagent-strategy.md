@@ -51,6 +51,19 @@ K = min(--page-worker-concurrency, 6, page_jobs.json.max_concurrent_pages, 剩�
 4. **共享风格契约**：把 `风格锁定与每页提示词.md` 放在 run 根目录，worker prompt 用绝对路径
    引用它，避免每个 worker 重新推导主题。
 
+## 三·五、定向催办（实测有效）
+
+worker 长时间没有任何产物时（实测：>25 分钟且 `assets/`、`manifest.json` 都没出现），
+用 `send_message` 发一条**具体的收敛指令**，而不是干等。有效的内容包括：
+
+1. 给出**同类页面的成功路径**："参考 page_003：只用了 2 次图像任务（1 次 clean base + 1 次 asset sheet），其余全部原生重建"；
+2. 把它压成 5–6 步的编号清单（执行已写好的提示词 → import → process-sheet → 写 manifest → build → contact-sheet → validate）；
+3. 明确**降级许可**："渐变/发光无法用运行时表达时用纯色近似 + 写进 warnings 即可，不影响 passed"；
+4. 给一个**兜底出口**："20 分钟内仍无法完成，就把阻塞写进 validation.json（passed:false + 原因）并立即返回"。
+
+实测：两个 25 分钟无输出的 worker 收到催办后，4 分钟内各自产出了第一批资产。
+不要把催办写成交互式提问——worker 需要的是一条可执行路径，不是一个问题。
+
 ## 四、失败处理
 
 | 情况 | 处置 |
