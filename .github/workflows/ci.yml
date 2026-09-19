@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 安装依赖（CI 不装生图/OCR 相关依赖）
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install Pillow numpy python-pptx
+
+      - name: 语法检查
+        run: python -m py_compile scripts/*.py tests/*.py
+
+      - name: 单元测试
+        run: python -m unittest discover -s tests -v
+
+      - name: 冒烟测试（不触网、不调用付费 API）
+        run: |
+          set -e
+          python scripts/deck.py doctor || true
+          python scripts/deck.py spec skeleton "给大学生讲 Transformer，科技风，3 页，课堂分享" \
+            --out /tmp/deck_spec.json --pages 3
+          python scripts/deck.py spec render --spec /tmp/deck_spec.json --out-dir /tmp/deck-run
+          python scripts/deck.py gen --spec /tmp/deck-run/deck_spec.json --out-dir /tmp/deck-run --dry-run
+          grep -q "页面标题" /tmp/deck-run/prompts/page-01.md
+          grep -q "风格锁定" "/tmp/deck-run/风格锁定与每页提示词.md"
+
+      - name: 上游合并适配器自检（找不到 image-to-editable-ppt 时允许失败）
+        run: python scripts/merge_pages.py --check || echo "未检测到上游技能，跳过"

@@ -1,0 +1,40 @@
+# ---- 密钥与本地配置（永远不要提交）----
+.slideforge/
+*.key
+.env
+.env.*
+!env.example
+config.local.json
+
+# ---- 运行产物 ----
+deck-runs/
+runs/
+editable-parts/
+merged/
+out/
+*.pptx
+*.pdf
+!examples/**/*.pdf
+
+# ---- 大图（示例缩略图请压到 1280px 以内再入库）----
+*.png
+*.jpg
+*.jpeg
+*.webp
+!assets/**/*.png
+!assets/**/*.jpg
+!examples/**/*.jpg
+!examples/**/*.png
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
