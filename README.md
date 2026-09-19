@@ -9,7 +9,7 @@
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 ![DSH Skill](https://img.shields.io/badge/DSH-skill-6E56CF)
 
-![示例封面](examples/transformer-glass/images/p01.jpg)
+![社交预览](assets/social-preview.png)
 
 ---
 

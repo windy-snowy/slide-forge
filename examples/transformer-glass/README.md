@@ -53,7 +53,21 @@ python3 scripts/editable_run.py merge --spec /tmp/tf-run/deck_spec.json
    > 这也是为什么 `core_text` 要写成 3–4 条、每条 ≤20 字：太长会拖低 OCR 匹配率，
    > 太短又不足以判断画面文字是否正确。
 
+5. **模型会改写标题用词**——这是真实现象，不是 bug。举例：
+
+   | | 文字 |
+   | --- | --- |
+   | spec 第 3 页标题 | `自注意力：每个词都在“看”别的词` |
+   | 实际出图标题（OCR 回读） | `自注意力机制：一个词如何“看到”全句` |
+
+   语义不变、用词被精简。所以 QA 把这类页标成 `warn`（值得人看一眼）而不是 `fail`；
+   想让标题**逐字**出现，要把它写进 `core_text` 并在 `negative` 里加 `不要改写标题用词`。
+   详见 [docs/faq.md](../../docs/faq.md)。
+
 ## 原素材出处
 
 原始 10 页由 `gpt-image-2`（OpenAI 兼容中转站）逐页生成，
 出图尺寸 1536×1024、`quality=low`，再按 `fit=auto` 适配 16:9；中文逐字校验通过。
+
+仓库首页的社交预览图（`assets/social-preview.png`，1280×640）就是用这里的
+`images/p01.jpg` 与 `images/p03.jpg` 拼的。
