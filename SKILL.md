@@ -50,6 +50,15 @@ description: 从一句自然语言描述生成整套演示文稿，产出「图�
 python3 <skill>/scripts/deck.py doctor
 ```
 
+想一条命令走完（到质检为止），可以直接：
+
+```bash
+python3 <skill>/scripts/deck.py all "<用户原话>" --until qa
+```
+
+`all` 会从描述里自动抠出页数 / 时长 / 受众（例如"3 页""约 20 分钟""给大学生讲"），
+其余走默认值。下面的三步是它的展开，需要精细控制时逐步执行。
+
 ### 阶段 1 · 描述 → 规格与提示词
 
 用 `prompts/extract-spec.md` 的规则把用户描述写成 `deck_spec.json`，然后渲染：

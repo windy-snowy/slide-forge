@@ -97,7 +97,7 @@ python3 $SF/scripts/editable_run.py merge   --spec <run>/deck_spec.json
 ## Documentation
 
 - [Publish to GitHub](docs/PUBLISH-TO-GITHUB.md) (Chinese, step by step)
-- [Workflow and state machine](docs/workflow.md) · [FAQ](docs/faq.md)
+- [Workflow and state machine](docs/workflow.md) · [FAQ](docs/faq.md) · [Verification record](docs/verification.md)
 - [Spec format](references/spec-format.md) · [Prompt template](references/prompt-template.md)
 - [Image backends](references/image-models.md) · [OCR setup](references/ocr.md)
 - [Element deck contract](references/editable-pipeline.md) · [Subagent strategy](references/subagent-strategy.md)

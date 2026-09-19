@@ -190,6 +190,7 @@ slide-forge/
 - [如何上传 GitHub](docs/PUBLISH-TO-GITHUB.md) —— 面向第一次发开源仓库的人
 - [工作流与状态机](docs/workflow.md)
 - [FAQ 与已知限制](docs/faq.md)
+- [验证记录](docs/verification.md) —— 实测过的与没实测的（含证据）
 - [风格预设格式](references/spec-format.md) / [提示词模板](references/prompt-template.md)
 - [生图后端与模型](references/image-models.md) / [OCR 配置](references/ocr.md)
 - [元素版流程契约](references/editable-pipeline.md) / [子代理加速策略](references/subagent-strategy.md)

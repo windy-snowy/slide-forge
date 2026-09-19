@@ -22,5 +22,5 @@
 - **阶段 3 · 元素版**：委托 `image-to-editable-ppt`，两种模式——
   默认（无子代理）逐页单 run 重建后由上游构建器合并；`--subagents` 单次多页 run + 流水线并行派工。
 - `install.sh`：软链/复制安装到 `~/.dsh/skills`、`~/.claude/skills` 等技能目录。
-- 文档：`docs/PUBLISH-TO-GITHUB.md`（上传 GitHub 全流程）、`docs/workflow.md`、`docs/faq.md`。
-- 77 个单元测试 + GitHub Actions CI（不含任何付费 API 调用）。
+- 文档：`docs/PUBLISH-TO-GITHUB.md`（上传 GitHub 全流程）、`docs/workflow.md`、`docs/faq.md`、`docs/verification.md`（验证记录）。
+- 98 个单元测试 + GitHub Actions CI（不含任何付费 API 调用）。
